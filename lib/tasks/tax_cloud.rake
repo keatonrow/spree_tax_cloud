@@ -2,6 +2,30 @@ require 'fileutils'
 include FileUtils::Verbose
 
 namespace :tax_cloud do
+  
+  task setup_logger: :environment do
+    logger           = Logger.new(STDOUT)
+    logger.level     = Logger::INFO
+    Rails.logger     = logger
+  end
+  
+  desc "Backfill transaction in TaxCloud"
+  task :backfill, [:start_date, :end_date] => :setup_logger do |t, args|
+    
+    START_DATE = args[:start_date].to_time.beginning_of_day
+    END_DATE = (args[:end_date].to_date - 1.days).to_time.end_of_day
+    matched_orders = Spree::Order.where(completed_at: START_DATE..END_DATE).where.not(state:"canceled")
+    backfiller = SpreeTaxCloud::Backfiller.new
+    matched_orders.each do |order|
+      backfiller.authorized_with_capture(order)
+    end
+    Rails.logger.info("START_DATE: #{START_DATE}")
+    Rails.logger.info("END_DATE: #{END_DATE}")
+    Rails.logger.info("Transaction count: #{matched_orders.count}")
+    
+    backfiller.print_results
+  end
+
   namespace :db do
     desc "Custom migrations"
     task :migrate do
